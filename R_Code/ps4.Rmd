@@ -1,0 +1,315 @@
+---
+title: "Problem Set 4"
+output: html_notebook
+---
+
+```{r setup, echo=FALSE}
+# Load necessary libraries
+library(readxl)
+library(broom)
+library(dplyr)
+library(tidyverse)
+library(xtable)
+library(car)
+```
+
+# Question a)
+
+```{r}
+# Load the dataset
+df <- read_excel("/Users/florianburnat/Downloads/tsetse1.xlsx")
+head(df)
+```
+
+```{r}
+# Function to run OLS regression and extract necessary results
+run_regression <- function(dependent_var) {
+  # Drop missing values
+  df_clean <- df %>% select(dependent_var, tsi) %>% drop_na()
+  
+  # Run the regression
+  model <- lm(get(dependent_var) ~ tsi, data = df_clean)
+  
+  # Get the summary
+  summary_model <- summary(model)
+  
+  # Calculate standard error of b2
+  se_b2 <- sqrt(vcov(model)[2, 2])
+  
+  # Get b2 and s^2
+  b2 <- coef(model)[2]
+  s2 <- sigma(model)^2
+  
+  # Return the results
+  return(data.frame(Dependent_Variable = dependent_var, b2 = b2, s2 = s2, SE_b2 = se_b2))
+}
+
+# List of dependent variables
+dependent_vars <- c("animals", "intensive", "plow", "female_ag", "slavery_indigenous", "central")
+
+# Run the regression for each dependent variable and bind the results
+results_a <- bind_rows(lapply(dependent_vars, run_regression))
+
+# Print the results
+print(results_a)
+```
+```{r}
+# Print the results in LaTeX format
+print(xtable(results_a, caption="Regression Results", label="tab:results_a", digits=c(0, 4, 4, 4, 4)), type="latex", caption.placement = "top")
+```
+# Question b)
+
+```{r}
+# Function to run OLS regression, perform t-test, and extract necessary results
+run_regression_and_test <- function(dependent_var) {
+  # Drop missing values
+  df_clean_b <- df %>% select(dependent_var, tsi) %>% drop_na()
+  
+  # Run the regression
+  model <- lm(get(dependent_var) ~ tsi, data = df_clean_b)
+  
+  # Calculate standard error of b2
+  se_b2 <- sqrt(vcov(model)[2, 2])
+  
+  # Get b2
+  b2 <- coef(model)[2]
+  
+  # Calculate t-statistic
+  t_statistic <- b2 / se_b2
+  
+  # Get degrees of freedom (n - k)
+  df <- nrow(df_clean_b) - length(coef(model))
+  
+  # Two-tailed p-value
+  p_value <- 2 * (1 - pt(abs(t_statistic), df))
+  
+  # Decision at 5% significance level
+  decision <- ifelse(p_value < 0.05, "Reject H0", "Do not reject H0")
+  
+  # Return the results
+  return(data.frame(Dependent_Variable = dependent_var, b2 = b2, SE_b2 = se_b2, t = t_statistic, p_value = p_value, Decision = decision))
+}
+
+# Run the regression and hypothesis test for each dependent variable
+results_b <- bind_rows(lapply(dependent_vars, run_regression_and_test))
+
+print(results_b)
+```
+
+```{r}
+# Convert the results to a LaTeX formatted table
+latex_table_b <- xtable(results_b, caption="T-Test Results", label="tab:results_b", digits=c(0, 0, 4, 4, 4, 4, 0))
+print(latex_table_b, type="latex", caption.placement = "top")
+```
+
+
+
+# Question c)
+
+```{r}
+# Function to run the extended OLS regression and extract necessary results
+run_extended_regression <- function(dependent_var) {
+  # Select necessary columns, drop missing values
+  df_clean_c <- df %>% 
+    select(dependent_var, "tsi", "meanrh", "meantemp", "itx", "malaria_index", "river", "coast", "lon", "abslat", "meanalt", "si") %>%
+    drop_na()
+  
+  # Construct the formula for the regression
+  formula <- as.formula(paste(dependent_var, "~ tsi + meanrh + meantemp + itx + malaria_index + river + coast + lon + abslat + meanalt + si"))
+  
+  # Run the regression
+  model <- lm(formula, data = df_clean_c)
+  
+  # Get the summary
+  summary_model <- summary(model)
+  
+  # Calculate standard error of b2
+  se_b2 <- sqrt(vcov(model)[2, 2])
+  
+  # Get b2 and s^2
+  b2 <- coef(model)[2]
+  s2 <- sigma(model)^2
+  
+  # Calculate t-statistic
+  t_statistic <- b2 / se_b2
+  
+  # Two-tailed p-value
+  p_value <- 2 * (1 - pt(abs(t_statistic), nrow(df_clean_c) - length(coef(model))))
+  
+  # Return the results
+  return(data.frame(Dependent_Variable = dependent_var, b2_extended = b2, s2_extended = s2, SE_b2_extended = se_b2, t_extended = t_statistic, p_value_extended = p_value))
+}
+
+# Run the extended regression for each dependent variable and bind the results
+extended_results <- bind_rows(lapply(dependent_vars, run_extended_regression))
+
+# Merge the results with the previous results
+results_c <- left_join(results, extended_results, by = "Dependent_Variable")
+
+print(results_c)
+
+```
+
+```{r}
+# Print the final results in a LaTeX formatted table
+latex_table_c <- xtable(results_c, caption="Regression Results with Extended Model", label="tab:results_c", digits=c(0, 0, 4, 4, 4, 4, 4, 4, 4, 4))
+print(latex_table_c, type="latex", caption.placement = "top")
+
+```
+
+
+# Question g)
+
+```{r}
+# Function to run the extended OLS regression, plot residuals, and save the plot
+plot_residuals_vs_tsi_and_save <- function(dependent_var) {
+  # Select necessary columns, drop missing values
+  df_clean_g <- df %>% 
+    select(dependent_var, "tsi") %>%
+    drop_na()
+  
+  # Construct the formula for the regression
+  formula <- as.formula(paste(dependent_var, "~ tsi"))
+  
+  # Run the regression
+  model <- lm(formula, data = df_clean_g)
+  
+  # Extract residuals
+  residuals <- resid(model)
+  
+  # Create a data frame for plotting
+  plot_data <- data.frame(Residuals = residuals, TSI = df_clean_g$tsi)
+  
+  # Create the plot with jitter
+  p <- ggplot(plot_data, aes(x = TSI, y = Residuals)) +
+    geom_jitter(width = 0.2, height = 0) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    labs(title = paste("Residuals vs TSI for", dependent_var),
+         x = "TSI",
+         y = "Residuals") +
+    theme_minimal()
+  
+  # Save the plot
+  file_path <- paste0("residuals_vs_tsi_", dependent_var, ".png")
+  ggsave(file_path, p, width = 7, height = 5, units = "in")
+  
+  # Return the file path for reference if needed
+  return(file_path)
+}
+
+# Plot residuals against "tsi" for each dependent variable and save the plots
+plot_paths_tsi <- lapply(dependent_vars, plot_residuals_vs_tsi_and_save)
+
+# Show the paths to the saved plots
+plot_paths_tsi
+
+```
+
+# Question h)
+
+```{r}
+# Load new dataset
+df_new <- read_excel("/Users/florianburnat/Downloads/tsetse2.xlsx")
+
+# Function to run the regression and extract results for beta_2 and gamma_2
+run_regression_africa <- function(dependent_var) {
+  # Select necessary columns, drop missing values
+  df_clean_h <- df_new %>% 
+    select(dependent_var, "tsi", "meanrh", "meantemp", "itx", "malaria_index", "river", "coast", "lon", "abslat", "meanalt", "si", "africa") %>%
+    drop_na()
+  
+  # Construct the formula for the regression
+  formula <- as.formula(paste(dependent_var, "~ tsi + meanrh + meantemp + itx + malaria_index + river + coast + lon + abslat + meanalt + si + africa + I(tsi * africa)"))
+  
+  # Run the regression
+  model <- lm(formula, data = df_clean_h)
+  
+  # Get the summary
+  summary_model <- summary(model)
+  
+  # Calculate standard error of beta_2 and gamma_2
+  se_beta_2 <- sqrt(vcov(model)[2, 2])
+  se_gamma_2 <- sqrt(vcov(model)[13, 13])
+  
+  # Get beta_2 and gamma_2
+  beta_2 <- coef(model)[2]
+  gamma_2 <- coef(model)[13]
+  
+  # Calculate t-statistics
+  t_beta_2 <- beta_2 / se_beta_2
+  t_gamma_2 <- gamma_2 / se_gamma_2
+  
+  # Two-tailed p-values
+  p_beta_2 <- 2 * (1 - pt(abs(t_beta_2), nrow(df_clean_h) - length(coef(model))))
+  p_gamma_2 <- 2 * (1 - pt(abs(t_gamma_2), nrow(df_clean_h) - length(coef(model))))
+  
+  # Return the results
+  return(data.frame(Dependent_Variable = dependent_var, beta_2 = beta_2, SE_beta_2 = se_beta_2, t_beta_2 = t_beta_2, p_beta_2 = p_beta_2,
+                    gamma_2 = gamma_2, SE_gamma_2 = se_gamma_2, t_gamma_2 = t_gamma_2, p_gamma_2 = p_gamma_2))
+}
+
+# Run the regression for each dependent variable
+results_h <- bind_rows(lapply(dependent_vars, run_regression_africa))
+print(results_h)
+
+```
+
+```{r}
+# Print the results in a LaTeX formatted table
+latex_table_h <- xtable(results_h, caption="Regression Results with Africa Indicator", label="tab:results_h", digits=c(0, 0, 4, 4, 4, 4, 4, 4, 4, 4))
+print(latex_table_h, type="latex", caption.placement = "top")
+
+
+```
+
+# Question j)
+
+```{r}
+run_f_test <- function(dependent_var, data) {
+  # Unrestricted model
+  formula_unrestricted <- as.formula(paste(dependent_var, "~ tsi + meanrh + meantemp + itx + malaria_index + river + coast + lon + abslat + meanalt + si + africa + I(tsi * africa)"))
+  model_unrestricted <- lm(formula_unrestricted, data = data)
+  sse_unrestricted <- sum(resid(model_unrestricted)^2)
+  
+  # Restricted model
+  formula_restricted <- as.formula(paste(dependent_var, "~ tsi + meanrh + meantemp + itx + malaria_index + river + coast + lon + abslat + meanalt + si + africa + I(tsi * (1 - africa))"))
+  model_restricted <- lm(formula_restricted, data = data)
+  sse_restricted <- sum(resid(model_restricted)^2)
+  
+  # Number of observations
+  n <- nrow(data)
+  
+  # Number of parameters in unrestricted model
+  k_unrestricted <- length(coef(model_unrestricted))
+  
+  # Number of restrictions
+  q <- 1
+  
+  # Compute F-statistic
+  f_statistic <- ((sse_restricted - sse_unrestricted) / q) / (sse_unrestricted / (n - k_unrestricted))
+  
+  # Compute p-value
+  p_value <- 1 - pf(f_statistic, q, n - k_unrestricted)
+  
+  # Degrees of freedom for the numerator (q) and denominator (n - k_unrestricted)
+  df1 <- q
+  df2 <- n - k_unrestricted
+  
+  # Return results with degrees of freedom
+  return(data.frame(Dependent_Variable = dependent_var, F_Statistic = f_statistic, P_Value = p_value, DF1 = df1, DF2 = df2))
+}
+
+# Test null hypothesis beta_2 + gamma_2 = 0 for all outcomes
+f_test_results <- do.call(rbind, lapply(dependent_vars, run_f_test, data = df_new))
+print(f_test_results)
+
+```
+
+```{r}
+# Convert the F-test results dataframe to a LaTeX table
+latex_f_test <- xtable(f_test_results, caption="F-Test Results for Null Hypothesis  beta_2 + gamma_2 = 0", label="tab:results_j", digits=c(0, 0, 4, 4, 0, 0))
+
+# Print the LaTeX code
+print(latex_f_test, type="latex", caption.placement = "top")
+```
+
